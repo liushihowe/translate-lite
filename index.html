@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>端到端翻译 · 中英互译</title>
+  <meta name="description" content="纯浏览器运行的中英互译工具,支持 OpenAI 兼容接口与思考模式">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    /* 首帧前设好主题,避免深色用户看到白底闪烁 */
+    (function () {
+      try {
+        var s = JSON.parse(localStorage.getItem("monet-translate:v2") || "{}");
+        var m = (s.prefs && s.prefs.theme) || "system";
+        var dark = m === "dark" || (m === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+      } catch (e) {
+        document.documentElement.dataset.theme = "light";
+      }
+    })();
+  </script>
+</head>
+<body>
+
+  <!-- ============ 顶栏 ============ -->
+  <header class="masthead">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">译</div>
+      <div class="brand-text">
+        <h1 data-i18n="brand">端到端翻译</h1>
+        <p class="subtitle" data-i18n="subtitle">中英互译 · 端到端 · 纯浏览器运行</p>
+      </div>
+    </div>
+    <div class="masthead-actions">
+      <button id="theme-toggle" class="icon-btn" title="切换深浅色" data-i18n-title="themeTitle">
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      </button>
+      <button id="open-settings" class="icon-btn" title="设置" data-i18n-title="settingsTitle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ============ 主区 ============ -->
+  <main class="wrap">
+    <div class="toolbar">
+      <button id="model-btn" class="tool-select" title="选择模型" data-i18n-title="chooseModelTitle">
+        <span class="tool-label" data-i18n="modelLabel">模型</span>
+        <span id="model-name" class="tool-value unset">选择模型</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+    </div>
+
+    <div class="translate-grid">
+      <!-- 左侧文本 -->
+      <section class="pane">
+        <details id="source-reasoning" class="reasoning" hidden>
+          <summary data-i18n="reasoning">思考过程</summary>
+          <div id="source-reasoning-body" class="reasoning-body"></div>
+        </details>
+        <textarea id="source" placeholder="输入中文或英文,自动翻译成相反语言…" data-i18n-placeholder="sourcePlaceholder" spellcheck="false"></textarea>
+        <div class="pane-foot">
+          <div class="pane-stats">
+            <span id="char-count" class="meta">0 字</span>
+            <span id="source-meta" class="meta"></span>
+          </div>
+          <div class="pane-actions">
+            <button id="btn-clear" class="ghost-btn" data-i18n="clear">清空</button>
+            <button id="btn-copy-source" class="ghost-btn" data-i18n="copy">复制</button>
+            <button id="btn-translate" class="primary-btn">
+              <span class="btn-label" data-i18n="translateRight">翻译到右侧</span>
+              <kbd>Ctrl ⏎</kbd>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右侧文本 -->
+      <section class="pane pane-result">
+        <details id="reasoning" class="reasoning" hidden>
+          <summary data-i18n="reasoning">思考过程</summary>
+          <div id="reasoning-body" class="reasoning-body"></div>
+        </details>
+        <textarea id="result" placeholder="译文将显示在这里,也可以输入文字翻译到左侧…" data-i18n-placeholder="resultPlaceholder" spellcheck="false"></textarea>
+        <div class="pane-foot">
+          <span id="result-meta" class="meta"></span>
+          <div class="pane-actions">
+            <button id="btn-clear-result" class="ghost-btn" data-i18n="clear">清空</button>
+            <button id="btn-copy" class="ghost-btn" data-i18n="copy">复制</button>
+            <button id="btn-translate-reverse" class="primary-btn">
+              <span class="btn-label" data-i18n="translateLeft">翻译到左侧</span>
+              <kbd>Ctrl ⏎</kbd>
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ============ 模型弹出菜单 ============ -->
+  <div id="model-menu" class="menu" hidden></div>
+
+  <!-- ============ 设置 ============ -->
+  <dialog id="settings" class="dialog">
+    <div class="dialog-head">
+      <h2 data-i18n="settingsHeading">设置</h2>
+      <button id="close-settings" class="icon-btn" title="关闭" data-i18n-title="closeTitle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="dialog-body">
+      <section class="settings-sec">
+        <h3 data-i18n="providersHeading">模型提供商</h3>
+        <div id="provider-list"></div>
+        <button id="add-provider" class="secondary-btn" data-i18n="addProvider">+ 添加提供商</button>
+      </section>
+
+      <section class="settings-sec">
+        <h3 data-i18n="promptHeading">翻译提示词</h3>
+        <p class="hint"><code>{{text}}</code> <span data-i18n="promptHint">会被替换为输入内容;目标语言由模型自动判断,中文 ↔ 英文互译。</span></p>
+        <textarea id="prompt-input" rows="9" spellcheck="false"></textarea>
+      </section>
+    </div>
+  </dialog>
+
+  <!-- ============ 提供商表单 ============ -->
+  <dialog id="provider-form" class="dialog dialog-form">
+    <div class="dialog-head">
+      <h2 id="pf-title">添加提供商</h2>
+    </div>
+    <div class="dialog-body">
+      <label class="field">
+        <span data-i18n="providerName">名称</span>
+        <input id="pf-name" type="text" placeholder="如 DeepSeek 官方" data-i18n-placeholder="providerNamePlaceholder">
+      </label>
+      <label class="field">
+        <span data-i18n="endpointLabel">完整接口地址（OpenAI 兼容的 Chat Completions URL）</span>
+        <input id="pf-url" type="text" class="mono" placeholder="https://api.deepseek.com/v1/chat/completions">
+      </label>
+      <label class="field">
+        <span data-i18n="apiKey">API Key</span>
+        <span class="key-row">
+          <input id="pf-key" type="password" class="mono" placeholder="sk-…" autocomplete="off">
+          <label class="key-visible"><input type="checkbox" id="pf-key-visible"><span data-i18n="showKey">显示</span></label>
+        </span>
+      </label>
+      <div class="field">
+        <span data-i18n="modelsHeading">模型</span>
+        <div id="pf-models" class="model-list"></div>
+        <button id="pf-add-model" type="button" class="secondary-btn model-add" data-i18n="addModel">+ 添加模型</button>
+      </div>
+    </div>
+    <div class="dialog-foot">
+      <button id="pf-cancel" class="ghost-btn" data-i18n="cancel">取消</button>
+      <button id="pf-save" class="primary-btn" data-i18n="save">保存</button>
+    </div>
+  </dialog>
+
+  <div id="toast"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
